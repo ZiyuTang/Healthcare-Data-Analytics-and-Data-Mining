@@ -1,0 +1,341 @@
+---
+title: "Healthcare Analysis Assignment-2"
+author: "group 3"
+date: "11/12/2019"
+output:
+  word_document: default
+  pdf_document: default
+  html_document: default
+---
+
+```{r loadlib, echo=T, results='hide', message=F, warning=F}
+rm(list=ls())
+library(data.table)
+library(sandwich)
+library(tidyverse)
+library(lmtest)
+library(ggplot2)
+library(knitr)
+library(psych)
+library(dplyr)
+```
+
+## Question 3
+
+```{r}
+EOC170=fread(file="~/Downloads/EOC170.csv",
+           col.names=c('Contract_Number','Plan_Name','UOD'),
+           select = c('Contract Number','Plan Name','EOC170-0010'))
+EOC170=EOC170[UOD!="0.00"&!is.na(UOD)&UOD!="NB"&UOD!="BR"&UOD!="NQ"]
+EOC170$UOD_rate=as.numeric(EOC170$UOD)/1000
+```
+
+```{r}
+enrollment=fread(file="~/Downloads/CPSC_Enrollment_2019_10/CPSC_Enrollment_Info_2019_10.csv",
+           col.names=c('Contract_Number','Plan_ID','State','Enrollment'),
+           select = c('Contract Number','Plan ID','State','Enrollment'))
+enrollment=enrollment[Enrollment!="*"&!is.na(Enrollment)]
+enrollment=enrollment[str_sub(enrollment$Contract_Number,1,1)!="S"]
+enrollment=enrollment[State=='FL'|State=='NC'|State=='MA'|State=='CO'|State=='OR'|State=='AR'|State=='WV'|State=='MT'|State=='VT']
+enrollment=enrollment[,.(enrollment=sum(as.numeric(Enrollment))),keyby =.(Contract_Number,Plan_ID,State)]
+```
+
+
+```{r}
+contract_sub_org=fread(file="~/Downloads/Monthly_Report_By_Plan_2019_10/Monthly_Report_By_Plan_2019_10.csv",
+                 col.names=c('Contract_Number','Plan_ID','Organization Marketing Name'),
+                 select = c('Contract Number','Plan ID','Organization Marketing Name'))
+```
+
+```{r}
+MajorInsuranceOrgs=fread(file="~/Downloads/MajorInsuranceOrgs.csv",
+                   col.names=c('Organization Marketing Name','Parent_Organization'),
+                   select = c('Organization Marketing Name','MajorInsuranceOrgName'))
+```
+
+```{r}
+contract_parent_org=merge(contract_sub_org,MajorInsuranceOrgs,by=c("Organization Marketing Name"),all.x=TRUE)
+```
+
+
+
+```{r}
+enrollment_contract=merge(enrollment,contract_parent_org,by=c("Contract_Number","Plan_ID"),all=FALSE)
+enrollment_contract=enrollment_contract[Parent_Organization!=is.na(Parent_Organization),]
+enrollment_contract=enrollment_contract[,.(State,Parent_Organization,Contract_Number,Plan_ID,enrollment)]
+enrollment_contract=enrollment_contract[,.(enrollment=sum(enrollment)),keyby =.(Contract_Number,Parent_Organization,State)]
+enrollment_contract=enrollment_contract[order(State,Contract_Number)]
+```
+
+```{r}
+plan_UOD=merge(enrollment_contract,EOC170,by=c("Contract_Number"),all=FALSE)
+select_cols=c('State','Parent_Organization','Contract_Number','enrollment','UOD_rate')
+plan_UOD=plan_UOD[,..select_cols]
+plan_UOD=plan_UOD[order(State,Contract_Number)]
+```
+
+```{r}
+enrollment_new=fread(file="~/Downloads/CPSC_Enrollment_2019_10/CPSC_Enrollment_Info_2019_10.csv",
+           col.names=c('Contract_Number','Plan_ID','State'),
+           select = c('Contract Number','Plan ID','State'))
+enrollment_new=enrollment_new[str_sub(enrollment_new$Contract_Number,1,1)!="S"]
+enrollment_new=enrollment_new[State=='FL'|State=='NC'|State=='MA'|State=='CO'|State=='OR'|State=='AR'|State=='WV'|State=='MT'|State=='VT']
+contract_parent=merge(enrollment_new,contract_parent_org,by=c("Contract_Number","Plan_ID"),all=FALSE)
+contract_parent_UOD=merge(contract_parent,EOC170,by=c("Contract_Number"),all=FALSE)
+```
+
+
+```{r}
+share=fread(file="~/Downloads/share.csv",
+           col.names=c('State','Parent_Organization','share'),
+           select = c('State','MajorInsuranceOrgName','share'))
+share=share[order(State)]
+```
+
+TOP 10 companies' UOD condition in AR
+
+```{r}
+AR_TOP10=share[State=='AR']
+AR_TOP10=AR_TOP10[order(-share)]
+AR_TOP10=AR_TOP10[1:10]
+AR_UOD=merge(AR_TOP10,plan_UOD,by=c("State","Parent_Organization"),all=FALSE)
+AR_UOD_1=merge(AR_TOP10,contract_parent_UOD,by=c("State","Parent_Organization"),all=FALSE)
+AR_UOD_1=AR_UOD_1[,.(UOD_rate=unique(UOD_rate)),keyby =.(Contract_Number,Parent_Organization,State)]
+```
+
+TOP 10 companies' UOD condition in CO
+
+```{r}
+CO_TOP10=share[State=='CO']
+CO_TOP10=CO_TOP10[order(-share)]
+CO_TOP10=CO_TOP10[1:10]
+CO_UOD=merge(CO_TOP10,plan_UOD,by=c("State","Parent_Organization"),all=FALSE)
+CO_UOD_1=merge(CO_TOP10,contract_parent_UOD,by=c("State","Parent_Organization"),all=FALSE)
+CO_UOD_1=CO_UOD_1[,.(UOD_rate=unique(UOD_rate)),keyby =.(Contract_Number,Parent_Organization,State)]
+```
+
+TOP 10 companies' UOD condition in FL
+
+```{r}
+FL_TOP10=share[State=='FL']
+FL_TOP10=FL_TOP10[order(-share)]
+FL_TOP10=FL_TOP10[1:10]
+FL_UOD=merge(FL_TOP10,plan_UOD,by=c("State","Parent_Organization"),all=FALSE)
+FL_UOD_1=merge(FL_TOP10,contract_parent_UOD,by=c("State","Parent_Organization"),all=FALSE)
+FL_UOD_1=FL_UOD_1[,.(UOD_rate=unique(UOD_rate)),keyby =.(Contract_Number,Parent_Organization,State)]
+```
+
+TOP 10 companies' UOD condition in MA
+
+```{r}
+MA_TOP10=share[State=='MA']
+MA_TOP10=MA_TOP10[order(-share)]
+MA_TOP10=MA_TOP10[1:10]
+MA_UOD=merge(MA_TOP10,plan_UOD,by=c("State","Parent_Organization"),all=FALSE)
+MA_UOD_1=merge(MA_TOP10,contract_parent_UOD,by=c("State","Parent_Organization"),all=FALSE)
+MA_UOD_1=MA_UOD_1[,.(UOD_rate=unique(UOD_rate)),keyby =.(Contract_Number,Parent_Organization,State)]
+```
+
+TOP 10 companies' UOD condition in MT
+
+```{r}
+MT_TOP10=share[State=='MT']
+MT_TOP10=MT_TOP10[order(-share)]
+MT_TOP10=MT_TOP10[1:10]
+MT_UOD=merge(MT_TOP10,plan_UOD,by=c("State","Parent_Organization"),all=FALSE)
+MT_UOD_1=merge(MT_TOP10,contract_parent_UOD,by=c("State","Parent_Organization"),all=FALSE)
+MT_UOD_1=MT_UOD_1[,.(UOD_rate=unique(UOD_rate)),keyby =.(Contract_Number,Parent_Organization,State)]
+```
+
+TOP 10 companies' UOD condition in NC
+
+```{r}
+NC_TOP10=share[State=='NC']
+NC_TOP10=NC_TOP10[order(-share)]
+NC_TOP10=NC_TOP10[1:10]
+NC_UOD=merge(NC_TOP10,plan_UOD,by=c("State","Parent_Organization"),all=FALSE)
+NC_UOD_1=merge(NC_TOP10,contract_parent_UOD,by=c("State","Parent_Organization"),all=FALSE)
+NC_UOD_1=NC_UOD_1[,.(UOD_rate=unique(UOD_rate)),keyby =.(Contract_Number,Parent_Organization,State)]
+```
+
+TOP 10 companies' UOD condition in OR
+
+```{r}
+OR_TOP10=share[State=='OR']
+OR_TOP10=OR_TOP10[order(-share)]
+OR_TOP10=OR_TOP10[1:10]
+OR_UOD=merge(OR_TOP10,plan_UOD,by=c("State","Parent_Organization"),all=FALSE)
+OR_UOD_1=merge(OR_TOP10,contract_parent_UOD,by=c("State","Parent_Organization"),all=FALSE)
+OR_UOD_1=OR_UOD_1[,.(UOD_rate=unique(UOD_rate)),keyby =.(Contract_Number,Parent_Organization,State)]
+```
+
+TOP 10 companies' UOD condition in VT
+
+```{r}
+VT_TOP10=share[State=='VT']
+VT_TOP10=VT_TOP10[order(-share)]
+VT_TOP10=VT_TOP10[1:10]
+VT_UOD=merge(VT_TOP10,plan_UOD,by=c("State","Parent_Organization"),all=FALSE)
+VT_UOD_1=merge(VT_TOP10,contract_parent_UOD,by=c("State","Parent_Organization"),all=FALSE)
+VT_UOD_1=VT_UOD_1[,.(UOD_rate=unique(UOD_rate)),keyby =.(Contract_Number,Parent_Organization,State)]
+```
+
+TOP 10 companies' UOD condition in WV
+
+```{r}
+WV_TOP10=share[State=='WV']
+WV_TOP10=WV_TOP10[order(-share)]
+WV_TOP10=WV_TOP10[1:10]
+WV_UOD=merge(WV_TOP10,plan_UOD,by=c("State","Parent_Organization"),all=FALSE)
+WV_UOD_1=merge(WV_TOP10,contract_parent_UOD,by=c("State","Parent_Organization"),all=FALSE)
+WV_UOD_1=WV_UOD_1[,.(UOD_rate=unique(UOD_rate)),keyby=.(Contract_Number,Parent_Organization,State)]
+```
+
+Summary of UOD condition of top 10 companies in all 9 states:
+
+```{r}
+UOD_top10_state=rbind(AR_UOD_1,CO_UOD_1,FL_UOD_1,MA_UOD_1,MT_UOD_1,NC_UOD_1,OR_UOD_1,VT_UOD_1,WV_UOD_1)
+UOD_top10_state=UOD_top10_state[order(State,Parent_Organization,Contract_Number)]
+```
+
+
+weight average for each state's top 10 companies:
+
+TOP 10 companies' UOD weight average in AR
+
+```{r}
+AR_UOD_org=AR_UOD[,.(UOD_population=enrollment*UOD_rate),keyby=.(Contract_Number,Parent_Organization,State)]
+AR_UOD_org=AR_UOD_org[,.(total_UOD_population=sum(UOD_population)),keyby=.(Parent_Organization,State)]
+AR_enrollment_org=AR_UOD[,.(total_enrollment=sum(enrollment)),keyby=.(Parent_Organization,State)]
+AR_weight_average=merge(AR_UOD_org,AR_enrollment_org,by='Parent_Organization',all.x=FALSE)
+AR_weight_average=AR_weight_average[,.(weight_average=total_UOD_population/total_enrollment),keyby=.(Parent_Organization,State.x)]
+AR_weight_average=AR_weight_average[ORDER(-weight_average)]
+```
+
+TOP 10 companies' UOD weight average in CO
+
+```{r}
+CO_UOD_org=CO_UOD[,.(UOD_population=enrollment*UOD_rate),keyby=.(Contract_Number,Parent_Organization,State)]
+CO_UOD_org=CO_UOD_org[,.(total_UOD_population=sum(UOD_population)),keyby=.(Parent_Organization,State)]
+CO_enrollment_org=CO_UOD[,.(total_enrollment=sum(enrollment)),keyby=.(Parent_Organization,State)]
+CO_weight_average=merge(CO_UOD_org,CO_enrollment_org,by='Parent_Organization',all.x=FALSE)
+CO_weight_average=CO_weight_average[,.(weight_average=total_UOD_population/total_enrollment),keyby=.(Parent_Organization,State.x)]
+CO_weight_average=CO_weight_average[ORDER(-weight_average)]
+```
+
+TOP 10 companies' UOD weight average in FL
+
+```{r}
+FL_UOD_org=FL_UOD[,.(UOD_population=enrollment*UOD_rate),keyby=.(Contract_Number,Parent_Organization,State)]
+FL_UOD_org=FL_UOD_org[,.(total_UOD_population=sum(UOD_population)),keyby=.(Parent_Organization,State)]
+FL_enrollment_org=FL_UOD[,.(total_enrollment=sum(enrollment)),keyby=.(Parent_Organization,State)]
+FL_weight_average=merge(FL_UOD_org,FL_enrollment_org,by='Parent_Organization',all.x=FALSE)
+FL_weight_average=FL_weight_average[,.(weight_average=total_UOD_population/total_enrollment),keyby=.(Parent_Organization,State.x)]
+FL_weight_average=FL_weight_average[ORDER(-weight_average)]
+```
+
+TOP 10 companies' UOD weight average in MA
+
+```{r}
+MA_UOD_org=MA_UOD[,.(UOD_population=enrollment*UOD_rate),keyby=.(Contract_Number,Parent_Organization,State)]
+MA_UOD_org=MA_UOD_org[,.(total_UOD_population=sum(UOD_population)),keyby=.(Parent_Organization,State)]
+MA_enrollment_org=MA_UOD[,.(total_enrollment=sum(enrollment)),keyby=.(Parent_Organization,State)]
+MA_weight_average=merge(MA_UOD_org,MA_enrollment_org,by='Parent_Organization',all.x=FALSE)
+MA_weight_average=MA_weight_average[,.(weight_average=total_UOD_population/total_enrollment),keyby=.(Parent_Organization,State.x)]
+MA_weight_average=MA_weight_average[ORDER(-weight_average)]
+```
+
+TOP 10 companies' UOD weight average in MT
+
+```{r}
+MT_UOD_org=MT_UOD[,.(UOD_population=enrollment*UOD_rate),keyby=.(Contract_Number,Parent_Organization,State)]
+MT_UOD_org=MT_UOD_org[,.(total_UOD_population=sum(UOD_population)),keyby=.(Parent_Organization,State)]
+MT_enrollment_org=MT_UOD[,.(total_enrollment=sum(enrollment)),keyby=.(Parent_Organization,State)]
+MT_weight_average=merge(MT_UOD_org,MT_enrollment_org,by='Parent_Organization',all.x=FALSE)
+MT_weight_average=MT_weight_average[,.(weight_average=total_UOD_population/total_enrollment),keyby=.(Parent_Organization,State.x)]
+MT_weight_average=MT_weight_average[ORDER(-weight_average)]
+```
+
+TOP 10 companies' UOD weight average in NC
+
+```{r}
+NC_UOD_org=NC_UOD[,.(UOD_population=enrollment*UOD_rate),keyby=.(Contract_Number,Parent_Organization,State)]
+NC_UOD_org=NC_UOD_org[,.(total_UOD_population=sum(UOD_population)),keyby=.(Parent_Organization,State)]
+NC_enrollment_org=NC_UOD[,.(total_enrollment=sum(enrollment)),keyby=.(Parent_Organization,State)]
+NC_weight_average=merge(NC_UOD_org,NC_enrollment_org,by='Parent_Organization',all.x=FALSE)
+NC_weight_average=NC_weight_average[,.(weight_average=total_UOD_population/total_enrollment),keyby=.(Parent_Organization,State.x)]
+NC_weight_average=NC_weight_average[ORDER(-weight_average)]
+```
+
+TOP 10 companies' UOD weight average in OR
+
+```{r}
+OR_UOD_org=OR_UOD[,.(UOD_population=enrollment*UOD_rate),keyby=.(Contract_Number,Parent_Organization,State)]
+OR_UOD_org=OR_UOD_org[,.(total_UOD_population=sum(UOD_population)),keyby=.(Parent_Organization,State)]
+OR_enrollment_org=OR_UOD[,.(total_enrollment=sum(enrollment)),keyby=.(Parent_Organization,State)]
+OR_weight_average=merge(OR_UOD_org,OR_enrollment_org,by='Parent_Organization',all.x=FALSE)
+OR_weight_average=OR_weight_average[,.(weight_average=total_UOD_population/total_enrollment),keyby=.(Parent_Organization,State.x)]
+OR_weight_average=OR_weight_average[ORDER(-weight_average)]
+```
+
+TOP 10 companies' UOD weight average in VT
+
+```{r}
+VT_UOD_org=VT_UOD[,.(UOD_population=enrollment*UOD_rate),keyby=.(Contract_Number,Parent_Organization,State)]
+VT_UOD_org=VT_UOD_org[,.(total_UOD_population=sum(UOD_population)),keyby=.(Parent_Organization,State)]
+VT_enrollment_org=VT_UOD[,.(total_enrollment=sum(enrollment)),keyby=.(Parent_Organization,State)]
+VT_weight_average=merge(VT_UOD_org,VT_enrollment_org,by='Parent_Organization',all.x=FALSE)
+VT_weight_average=VT_weight_average[,.(weight_average=total_UOD_population/total_enrollment),keyby=.(Parent_Organization,State.x)]
+VT_weight_average=VT_weight_average[ORDER(-weight_average)]
+```
+
+TOP 10 companies' UOD weight average in WV
+
+```{r}
+WV_UOD_org=WV_UOD[,.(UOD_population=enrollment*UOD_rate),keyby=.(Contract_Number,Parent_Organization,State)]
+WV_UOD_org=WV_UOD_org[,.(total_UOD_population=sum(UOD_population)),keyby=.(Parent_Organization,State)]
+WV_enrollment_org=WV_UOD[,.(total_enrollment=sum(enrollment)),keyby=.(Parent_Organization,State)]
+WV_weight_average=merge(WV_UOD_org,WV_enrollment_org,by='Parent_Organization',all.x=FALSE)
+WV_weight_average=WV_weight_average[,.(weight_average=total_UOD_population/total_enrollment),keyby=.(Parent_Organization,State.x)]
+WV_weight_average=WV_weight_average[ORDER(-weight_average)]
+```
+
+Summary of UOD weight average of top 10 companies in all 9 states:
+
+```{r}
+weight_average_top10_state=rbind(AR_weight_average,CO_weight_average,FL_weight_average,MA_weight_average,MT_weight_average,NC_weight_average,OR_weight_average,VT_weight_average,WV_weight_average)
+```
+
+save the results
+
+```{r}
+write.csv(UOD_top10_state, file="~/Downloads/UOD_top10_state.csv")
+write.csv(weight_average_top10_state, file="~/Downloads/weight_average_top10_state.csv")
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

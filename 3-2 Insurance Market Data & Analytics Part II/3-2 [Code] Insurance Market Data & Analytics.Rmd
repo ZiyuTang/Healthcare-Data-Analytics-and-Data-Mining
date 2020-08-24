@@ -1,0 +1,219 @@
+---
+title: "Assignment 3"
+author: "group 3"
+date: "11/17/2019"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r loadlib, echo=T, results='hide', message=F, warning=F}
+remove(list = ls())
+library(data.table)
+library(sandwich)
+library(tidyverse)
+library(lmtest)
+library(ggplot2)
+library(knitr)
+library(psych)
+library(dplyr)
+library(tidyr)
+library(scales)
+library(RColorBrewer)
+```
+
+## Question 1
+
+```{r}
+ED=fread(file="~/Downloads/VTED16.TXT")
+inp_2016=fread(file="~/Downloads/VTINP16_upd.TXT",
+           col.names=c('age','sex','payer','charge','MDC'),
+           select = c('intage','sex','PPAY','CHRGS','MDC'))
+inp=fread(file="~/Downloads/VTINP16_upd.TXT")
+revcode=fread(file="~/Downloads/VTREVCODE16.TXT")
+```
+
+```{r}
+patient_ed=ED[UNIQ==200760]
+#patient_ed
+patient_in=inp[UNIQ==200760]
+#patient_in
+patient_rev=revcode[Uniq==200760]
+#patient_rev
+#write.csv(patient_ed, file="~/Downloads/patient_ed.csv")
+#write.csv(patient_in, file="~/Downloads/patient_in.csv")
+#write.csv(patient_rev, file="~/Downloads/patient_rev.csv")
+```
+
+
+## Question 2
+
+```{r}
+inp_2016=inp_2016[payer==1|payer==2|payer==6|payer==7]
+```
+
+
+```{r}
+MDC=fread(file="~/Downloads/MDC.csv")
+age=fread(file="~/Downloads/age.csv",col.names=c('age','Age'),select = c('AGEGRP','AGE_GRP_DESC'))
+gender=fread(file="~/Downloads/gender.csv",col.names=c('sex','Gender'),select = c('SEX','SEX_DESC'))
+```
+
+
+```{r}
+inp_2016_medicare=inp_2016[payer==1]
+inp_2016_medicare$name_payer=c('Medicare')
+inp_2016_medicaid=inp_2016[payer==2]
+inp_2016_medicaid$name_payer=c('Medicaid')
+inp_2016_commericial=inp_2016[payer==6|payer==7]
+inp_2016_commericial$name_payer=c('Commercial')
+inp_2016=rbind(inp_2016_medicare,inp_2016_medicaid,inp_2016_commericial)
+#inp_2016
+```
+
+
+```{r}
+charge_MDC=inp_2016[,.(charge=sum(charge,na.rm=TRUE)),keyby =.(MDC,name_payer)]
+charge_MDC=charge_MDC[!is.na(MDC)&!is.na(charge)]
+charge_MDC$charge=round(charge_MDC$charge/1000000)
+charge_MDC=merge(charge_MDC,MDC,by=c("MDC"),all.x = TRUE)
+#charge_MDC
+```
+
+```{r}
+table=charge_MDC%>%spread(name_payer, charge)
+#table
+table_commercial=table[,2:3]
+table_commercial=table_commercial[!is.na(Commercial)&Commercial!=0]
+table_commercial=table_commercial[order(-Commercial)]
+#table_commercial
+
+table_medicaid=table[,c(2,4)]
+table_medicaid=table_medicaid[!is.na(Medicaid)&Medicaid!=0]
+table_medicaid=table_medicaid[order(-Medicaid)]
+#table_medicaid
+
+table_medicare=table[,c(2,5)]
+table_medicare=table_medicare[!is.na(Medicare)&Medicare!=0]
+table_medicare=table_medicare[order(-Medicare)]
+#table_medicare
+
+#write.csv(table, file="~/Downloads/tabulation.csv")
+```
+
+
+pie chart of medicare:
+
+```{r}
+pie_medicare=ggplot(table_medicare, aes(x="", y=Medicare, fill=reorder(MDC_CAT_NAME,-Medicare))) 
+pie_medicare=pie_medicare+ geom_bar(width = 1, stat = "identity") +
+             coord_polar(theta="y", direction = -1) +
+             theme_void()
+color=c("#800000","#990F0F", "#B22D2D", "#CC5252" ,"#E67E7E", "#FFB2B2","#8d5524", "#99700F", "#B28B2D", "#CCA852", "#E6C77E","#FFE8B2", "#1F990F", "#3CB22D", "#60CC52", "#8AE67E", "#BCFFB2" ,"#710F99" ,"#8B2DB2", "#A852CC","#C77EE6", "#E9B2FF" ,"#990F20" ,"#B22D3C", "#CC5260", "#E67E8A" ,"#FFB2BC")
+pie_medicare=pie_medicare+ geom_bar(width = 1, stat = "identity") +
+             coord_polar(theta="y", direction = -1) +
+             theme_void() +scale_fill_manual(values = color)+
+             theme(legend.title=element_blank(),legend.text = element_text(size = 5))
+#pie_medicare
+#length(unique(table_medicare$MDC_CAT_NAME)) 
+```
+
+pie chart of medicaid:
+
+```{r}
+pie_medicaid=ggplot(table_medicaid, aes(x="", y=Medicaid, fill=reorder(MDC_CAT_NAME,-Medicaid))) 
+pie_medicaid=pie_medicaid+ geom_bar(width = 1, stat = "identity") +
+             coord_polar(theta="y", direction = -1) +
+             theme_void()+ theme(legend.title = element_blank())
+color=c("#800000","#990F0F", "#B22D2D", "#CC5252" ,"#E67E7E", "#FFB2B2","#8d5524", "#99700F", "#B28B2D", "#CCA852", "#E6C77E","#FFE8B2", "#1F990F", "#3CB22D", "#60CC52", "#8AE67E", "#BCFFB2" ,"#710F99" ,"#8B2DB2", "#A852CC","#C77EE6", "#E9B2FF" ,"#990F20" ,"#B22D3C", "#CC5260", "#E67E8A" ,"#FFB2BC")
+pie_medicaid=pie_medicaid+ geom_bar(width = 1, stat = "identity") +
+             coord_polar(theta="y", direction = -1) +
+             theme_void() +scale_fill_manual(values = color)+
+             theme(legend.title=element_blank(),legend.text = element_text(size = 5))
+#pie_medicaid
+#length(unique(table_medicaid$MDC_CAT_NAME)) 
+```
+
+pie chart of commercial payers:
+
+```{r}
+pie_commercial=ggplot(table_commercial, aes(x="", y=Commercial, fill=reorder(MDC_CAT_NAME,-Commercial))) 
+pie_commercial=pie_commercial+ geom_bar(width = 1, stat = "identity") +
+             coord_polar(theta="y", direction = -1) +
+             theme_void()
+color=c("#800000","#990F0F", "#B22D2D", "#CC5252" ,"#E67E7E", "#FFB2B2","#8d5524", "#99700F", "#B28B2D", "#CCA852", "#E6C77E","#FFE8B2", "#1F990F", "#3CB22D", "#60CC52", "#8AE67E", "#BCFFB2" ,"#710F99" ,"#8B2DB2", "#A852CC","#C77EE6", "#E9B2FF" ,"#990F20" ,"#B22D3C", "#CC5260", "#E67E8A")
+pie_commercial=pie_commercial+ geom_bar(width = 1, stat = "identity") +
+             coord_polar(theta="y", direction = -1) +
+             theme_void() +scale_fill_manual(values = color)+
+             theme(legend.title=element_blank(),legend.text = element_text(size = 5),legend.key.size = unit(0.5, "cm"))
+#pie_commercial
+#length(unique(table_commercial$MDC_CAT_NAME)) 
+```
+
+
+Personas of Medicare
+
+```{r}
+personas_Medicare=inp_2016_medicare[,1:2]
+personas_Medicare=merge(personas_Medicare,age,by=c("age"),all.x = TRUE)
+personas_Medicare=merge(personas_Medicare,gender,by=c("sex"),all.x = TRUE)
+personas_Medicare=personas_Medicare[order(Age,Gender)]
+#personas_Medicare
+```
+
+
+```{r}
+table_age=table(personas_Medicare$Age)
+#table_age
+# 65+: (3781+3788+12233)/24029=0.8240876
+table_gender=table(personas_Medicare$Gender)
+#table_gender
+```
+
+
+Personas of Medicaid
+
+```{r}
+personas_Medicaid=inp_2016_medicaid[,1:2]
+personas_Medicaid=merge(personas_Medicaid,age,by=c("age"),all.x = TRUE)
+personas_Medicaid=merge(personas_Medicaid,gender,by=c("sex"),all.x = TRUE)
+#personas_Medicaid[order(Age,Gender)]
+```
+
+
+```{r}
+table_age=table(personas_Medicaid$Age)
+#table_age
+table_gender=table(personas_Medicaid$Gender)
+#table_gender
+```
+
+
+Personas of commercial payers
+
+```{r}
+personas_commericial=inp_2016_commericial[,1:2]
+personas_commericial=merge(personas_commericial,age,by=c("age"),all.x = TRUE)
+personas_commericial=merge(personas_commericial,gender,by=c("sex"),all.x = TRUE)
+#personas_commericial[order(Age,Gender)]
+```
+
+
+```{r}
+table_age=table(personas_commericial$Age)
+#table_age
+table_gender=table(personas_commericial$Gender)
+#table_gender
+```
+
+
+
+
+
+
+
+
+
+
+
+

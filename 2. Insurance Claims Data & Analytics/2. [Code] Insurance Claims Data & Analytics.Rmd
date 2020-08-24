@@ -1,0 +1,445 @@
+---
+title: "Untitled"
+author: "ziyu"
+date: "11/30/2019"
+output:
+  word_document: default
+  html_document: default
+---
+
+```{r loadlib, echo=T, results='hide', message=F, warning=F}
+remove(list = ls())
+library(data.table)
+library(sandwich)
+library(tidyverse)
+library(lmtest)
+library(ggplot2)
+library(knitr)
+library(psych)
+library(dplyr)
+library(tidyr)
+library(scales)
+library(RColorBrewer)
+library(reshape)
+library(clusterSim)
+library(wordcloud)
+```
+
+
+```{r}
+inp=fread(file="~/Downloads/VTINP16_upd.TXT")
+revcode=fread(file="~/Downloads/VTREVCODE16.TXT")
+rev=revcode[,c(5,7,10)]
+DRG=fread(file="~/Downloads/DRG.csv")
+PCCR=fread(file="~/Downloads/PCCR.csv")
+inp_new=fread(file="~/Downloads/VTINP16_upd.TXT",
+           col.names=c('Uniq','DRG'),
+           select = c('UNIQ','DRG'))
+inp_new=inp_new[DRG>=20&DRG<=977]
+
+```
+
+
+```{r}
+inp_rev=merge(inp_new,rev,by="Uniq",all.x = FALSE)
+inp_rev=inp_rev[REVCHRGS>100|REVCHRGS==100]
+charge_ad=inp_rev[,.(charge=sum(REVCHRGS,na.rm=TRUE)),keyby =.(Uniq,DRG,PCCR)]
+charge_ad=charge_ad[!is.na(PCCR)]
+charge_ad=merge(charge_ad,DRG,by="DRG",all.x=TRUE)
+charge_ad=merge(charge_ad,PCCR,by="PCCR",all.x=TRUE)
+charge_ad=charge_ad[,-c(1,2)]
+colnames(charge_ad) <- c("Uniq", "charge","DRG","PCCR")
+```
+
+
+```{r}
+total_charge=charge_ad[,.(num_ad=.N,total=sum(charge,na.rm=TRUE)),keyby =.(DRG,PCCR)]
+avg_charge=total_charge[,.(average=total/num_ad),keyby =.(DRG,PCCR)]
+```
+
+```{r}
+table=cast(avg_charge,DRG~PCCR)
+table=table[,-56]
+table=table[-688,]
+rownames(table)=table$DRG
+table_new=table[,-1]
+```
+
+```{r}
+table_new$PCCR_OR_and_Anesth_Costs=table_new[,"Operating Room"]+table_new[,"Anesthesiology"]
+table_new[is.na(table_new)]=0
+#table_new
+#write.csv(table_new, file="~/Downloads/table_new.csv")
+```
+
+```{r}
+cluster_data=table_new[,55]
+cost=as.data.frame(cluster_data)
+rownames(cost)=table$DRG
+check=cost
+check$name=rownames(cost)
+check=as.data.table(check)
+```
+
+```{r}
+# Calinski-Harabaz f-stat
+set.seed(123456)
+for (i in 2:5) {
+  result=kmeans(cost,i)
+  print(index.G1(cost,result$cluster,centrotypes="centroids"))
+}
+```
+
+
+```{r}
+set.seed(1234)
+result=kmeans(cost,3)
+# mean cost of the clusters
+result[2]
+```
+
+```{r}
+# DRG under each clusters
+DRG_cluster=as.data.frame(result[1])
+#write.csv(DRG_cluster, file="~/Downloads/DRG_cluster.csv")
+cost_2=cost
+cost_2$DRG=table$DRG
+DRG_cluster_2=DRG_cluster
+DRG_cluster_2$DRG=table$DRG
+plot_data=merge(DRG_cluster_2,cost_2,by= "DRG",all=FALSE)
+colnames(plot_data)=c("DRG","group","cost")
+
+data=plot_data
+data$group=as.character(data$group)
+
+ggplot(data, aes(DRG, cost, color = group)) + geom_point()+
+  labs(x = "DRG", y = "Cost($)", color = "Group\n")+ scale_color_manual(labels = c("low cost", "medium cost","high cost"), values = c("#008080", "#ffcc5c","#d9534f"))+
+  theme(axis.text.x=element_blank(),
+        axis.ticks.x=element_blank())
+```
+
+
+```{r}
+colnames(data) <- c("Name", "group","cost")
+low=data[data$group=="1",]
+medium=data[data$group=="2",]
+high=data[data$group=="3",]
+low=merge(low,DRG,by="Name")
+medium=merge(medium,DRG,by="Name")
+high=merge(high,DRG,by="Name")
+```
+
+# analysis of low cost
+
+inp features
+- hospital share HHI: 0.1885219;hospital num HHI 0.1822806
+top hospital is University of Vermont Medical Center (as of 2014)
+— admission type: Emergency is the most common
+- average pdays: 4.274434
+
+
+```{r}
+inp_data=inp[,c(1,2,54,76)]
+
+low_inp=merge(inp_data,low,by="DRG",all=FALSE)
+low_inp=as.data.table(low_inp)
+low_inp=low_inp[cost!=0]
+
+hospital_share=low_inp[,.(cost=sum(cost)),keyby =.(hnum2)]
+hospital_share$share=hospital_share$cost/(sum(hospital_share$cost))
+hospital_share=hospital_share[order(-share)]
+hospital_share$share_2=hospital_share$share*hospital_share$share
+low_hhi_share=sum(hospital_share$share_2)
+
+hospital_num=low_inp[,.(number=.N),keyby =.(hnum2)]
+hospital_num$share=hospital_num$number/(sum(hospital_num$number))
+hospital_num=hospital_num[order(-share)]
+hospital_num$share_2=hospital_num$share*hospital_num$share
+low_hhi_num=sum(hospital_num$share_2)
+
+
+adtype=low_inp[,.(number=.N),keyby =.(ATYPE)]
+adtype=adtype[order(-number)]
+
+pdays=low_inp[,.(number=.N),keyby =.(pdays)]
+pdays=pdays[order(-number)]
+sum(pdays$number)
+sum(pdays$pdays*pdays$number)/37714
+```
+
+revcode features
+
+- Top 5 expenditure of service:
+Room & Board (Semi-Private 2 beds)
+Laboratory - Clinical Diagnostic
+Emergency Room
+Pharmacy
+Psychiatric
+
+- Top 5 common service:
+Pharmacy
+Drugs Require Specific ID: Drugs requiring detail coding
+Pharmacy: Other
+Drugs Require Specific ID: Self admin drugs (insulin admin in emergency-diabetes coma)
+Laboratory - Clinical Diagnostic
+
+```{r}
+rev_2=revcode[,c(5,6,7,8,10)]
+inp_rev_2=merge(inp_new,rev_2,by="Uniq",all.x = FALSE)
+inp_rev_2=inp_rev_2[,c(2:5)]
+low_rev=merge(inp_rev_2,low,by="DRG",all=FALSE)
+low_rev=low_rev[cost!=0]
+
+REVCODE_share=low_rev[,.(total=sum(REVCHRGS)),keyby =.(REVCODE)]
+REVCODE_share=REVCODE_share[order(-total)]
+
+REVCODE_num=low_rev[,.(number=sum(REVUNITS)),keyby =.(REVCODE)]
+REVCODE_num=REVCODE_num[order(-number)]
+
+```
+
+
+
+
+# analysis of medium cost
+
+inp features
+- hospital share HHI:  0.2590445;hospital num HHI 0.253887
+top hospital is University of Vermont Medical Center (as of 2014)
+— admission type: Elective is the most common
+- average pdays: 4.673648
+
+
+
+```{r}
+inp_data=inp[,c(1,2,54,76)]
+
+medium_inp=merge(inp_data,medium,by="DRG",all=FALSE)
+medium_inp=as.data.table(medium_inp)
+medium_inp=medium_inp[cost!=0]
+
+hospital_share=medium_inp[,.(cost=sum(cost)),keyby =.(hnum2)]
+hospital_share$share=hospital_share$cost/(sum(hospital_share$cost))
+hospital_share=hospital_share[order(-share)]
+hospital_share$share_2=hospital_share$share*hospital_share$share
+medium_hhi_share=sum(hospital_share$share_2)
+
+hospital_num=medium_inp[,.(number=.N),keyby =.(hnum2)]
+hospital_num$share=hospital_num$number/(sum(hospital_num$number))
+hospital_num=hospital_num[order(-share)]
+hospital_num$share_2=hospital_num$share*hospital_num$share
+medium_hhi_num=sum(hospital_num$share_2)
+
+adtype=medium_inp[,.(number=.N),keyby =.(ATYPE)]
+adtype=adtype[order(-number)]
+
+pdays=medium_inp[,.(number=.N),keyby =.(pdays)]
+pdays=pdays[order(-number)]
+sum(pdays$number)
+sum(pdays$pdays*pdays$number)/10504
+
+```
+
+revcode features
+
+- Top 5 expenditure of service:
+Operating Room Services
+Medical/Surgical Supplies: Other implants
+Room & Board (Semi-Private 2 beds)
+Pharmacy
+Anesthesia
+
+- Top 5 common service:
+Pharmacy
+Anesthesia
+Operating Room Services
+Drugs Require Specific ID: Drugs requiring detail coding
+Drugs Require Specific ID: Self admin drugs (insulin admin in emergency-diabetes coma)
+
+```{r}
+rev_2=revcode[,c(5,6,7,8,10)]
+inp_rev_2=merge(inp_new,rev_2,by="Uniq",all.x = FALSE)
+inp_rev_2=inp_rev_2[,c(2:5)]
+medium_rev=merge(inp_rev_2,medium,by="DRG",all=FALSE)
+medium_rev=medium_rev[cost!=0]
+
+REVCODE_share=medium_rev[,.(total=sum(REVCHRGS)),keyby =.(REVCODE)]
+REVCODE_share=REVCODE_share[order(-total)]
+
+REVCODE_num=medium_rev[,.(number=sum(REVUNITS)),keyby =.(REVCODE)]
+REVCODE_num=REVCODE_num[order(-number)]
+
+```
+
+
+# analysis of high cost
+
+inp features
+- hospital share HHI:  0.7596885; hospital num HHI 0.7545897
+top hospital is University of Vermont Medical Center (as of 2014)
+— admission type: Elective is the most common
+- average pdays: 9.486261
+
+
+```{r}
+inp_data=inp[,c(1,2,54,76)]
+
+high_inp=merge(inp_data,high,by="DRG",all=FALSE)
+high_inp=as.data.table(high_inp)
+high_inp=high_inp[cost!=0]
+
+hospital_share=high_inp[,.(cost=sum(cost)),keyby =.(hnum2)]
+hospital_share$share=hospital_share$cost/(sum(hospital_share$cost))
+hospital_share=hospital_share[order(-share)]
+hospital_share$share_2=hospital_share$share*hospital_share$share
+high_hhi_share=sum(hospital_share$share_2)
+
+hospital_num=high_inp[,.(number=.N),keyby =.(hnum2)]
+hospital_num$share=hospital_num$number/(sum(hospital_num$number))
+hospital_num=hospital_num[order(-share)]
+hospital_num$share_2=hospital_num$share*hospital_num$share
+high_hhi_num=sum(hospital_num$share_2)
+
+adtype=high_inp[,.(number=.N),keyby =.(ATYPE)]
+adtype=adtype[order(-number)]
+
+pdays=high_inp[,.(number=.N),keyby =.(pdays)]
+pdays=pdays[order(-number)]
+sum(pdays$number)
+sum(pdays$pdays*pdays$number)/1201
+```
+
+
+revcode features
+
+- Top 5 expenditure of service:
+Operating Room Services
+Room & Board (Semi-Private 2 beds)
+Medical/Surgical Supplies: Other implants
+Intensive care
+Pharmacy
+
+- Top 5 common service:
+Pharmacy
+Drugs Require Specific ID: Drugs requiring detail coding
+Operating Room Services
+Anesthesia
+Drugs Require Specific ID: Self admin drugs (insulin admin in emergency-diabetes coma)
+
+
+```{r}
+rev_2=revcode[,c(5,6,7,8,10)]
+inp_rev_2=merge(inp_new,rev_2,by="Uniq",all.x = FALSE)
+inp_rev_2=inp_rev_2[,c(2:5)]
+high_rev=merge(inp_rev_2,high,by="DRG",all=FALSE)
+high_rev=high_rev[cost!=0]
+
+REVCODE_share=high_rev[,.(total=sum(REVCHRGS)),keyby =.(REVCODE)]
+REVCODE_share=REVCODE_share[order(-total)]
+
+REVCODE_num=high_rev[,.(number=sum(REVUNITS)),keyby =.(REVCODE)]
+REVCODE_num=REVCODE_num[order(-number)]
+
+```
+
+```{r}
+drg_cluster_low=as.data.frame(low_inp$Name)
+colnames(drg_cluster_low)=c("name")
+drg_cluster_low$name=as.character(factor(drg_cluster_low$name))
+
+List <- strsplit(drg_cluster_low$name, " ")
+List=data.frame(Words=unlist(List))
+List=as.data.table(List)
+List=List[,.(number=.N),keyby=.(Words)]
+List=List[order(-number)]
+List=List[-c(1,2,3,5,11,12,13,14,15,16,19,20,21)]
+List=List[-c(13:16)]
+List=List[-c(36)]
+List=List[-c(3)]
+
+#cloud_low=List %>%with(wordcloud(Words, number, max.words = 80,colors=brewer.pal(8, "Dark2")))
+```
+
+```{r}
+drg_cluster_medium=as.data.frame(medium_inp$Name)
+colnames(drg_cluster_medium)=c("name")
+drg_cluster_medium$name=as.character(factor(drg_cluster_medium$name))
+
+List <- strsplit(drg_cluster_medium$name, " ")
+List=data.frame(Words=unlist(List))
+List=as.data.table(List)
+List=List[,.(number=.N),keyby=.(Words)]
+List=List[order(-number)]
+
+List=List[-c(11,15)]
+
+
+#cloud_low=List %>%with(wordcloud(Words, number, max.words = 80,colors=brewer.pal(8, "Dark2")))
+```
+
+```{r}
+inp_data=inp[,c(1,2,4,6,54,76)]
+low_gender=merge(inp_data,low,by="DRG",all=FALSE)[,5]
+low_gender=low_gender[,.(number=.N),keyby=.(sex)]
+low_gender=low_gender[-1,]
+17616+23540	
+low_gender=low_gender[,.(percentage=number/41156),keyby=.(sex)]
+```
+
+```{r}
+inp_data=inp[,c(1,2,4,6,54,76)]
+medium_gender=merge(inp_data,medium,by="DRG",all=FALSE)[,5]
+medium_gender=medium_gender[,.(number=.N),keyby=.(sex)]
+medium_gender
+4867+5637
+medium_gender=medium_gender[,.(percentage=number/10504),keyby=.(sex)]
+```
+
+```{r}
+inp_data=inp[,c(1,2,4,6,54,76)]
+high_gender=merge(inp_data,high,by="DRG",all=FALSE)[,5]
+high_gender=high_gender[,.(number=.N),keyby=.(sex)]
+753+448	
+high_gender=high_gender[,.(percentage=number/1201),keyby=.(sex)]
+```
+48.87745
+```{r}
+age=fread(file="~/Downloads/age.csv",col.names=c('intage','median'),select = c('AGEGRP','median'))
+inp_data=inp[,c(1,2,4,6,54,76)]
+row_number=merge(inp_data,low,by="DRG",all=FALSE)[,4]
+low_age=merge(inp_data,low,by="DRG",all=FALSE)[,4]
+low_age=merge(low_age,age,by="intage",all=FALSE)
+
+low_age=low_age[,.(number=.N),keyby=.(median)]
+average=sum(low_age$median*low_age$number)/nrow(row_number)
+```
+
+60.04446
+
+```{r}
+age=fread(file="~/Downloads/age.csv",col.names=c('intage','median'),select = c('AGEGRP','median'))
+inp_data=inp[,c(1,2,4,6,54,76)]
+row_number=merge(inp_data,medium,by="DRG",all=FALSE)[,4]
+medium_age=merge(inp_data,medium,by="DRG",all=FALSE)[,4]
+medium_age=merge(medium_age,age,by="intage",all=FALSE)
+
+medium_age=medium_age[,.(number=.N),keyby=.(median)]
+average=sum(medium_age$median*medium_age$number)/nrow(row_number)
+```
+
+60.81848
+
+```{r}
+age=fread(file="~/Downloads/age.csv",col.names=c('intage','median'),select = c('AGEGRP','median'))
+inp_data=inp[,c(1,2,4,6,54,76)]
+row_number=merge(inp_data,high,by="DRG",all=FALSE)[,4]
+high_age=merge(inp_data,high,by="DRG",all=FALSE)[,4]
+high_age=merge(high_age,age,by="intage",all=FALSE)
+
+high_age=high_age[,.(number=.N),keyby=.(median)]
+average=sum(high_age$median*high_age$number)/nrow(row_number)
+```
+
+
+
+
